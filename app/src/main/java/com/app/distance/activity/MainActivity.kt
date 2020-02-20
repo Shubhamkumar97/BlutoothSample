@@ -63,6 +63,10 @@ class MainActivity : AppCompatActivity(), SwipeRefreshLayout.OnRefreshListener,
 
     private val devices = ArrayList<Device>()
 
+
+
+
+
     private var mBlueToothService: BluetoothService? = null
 
     private var isServiceBound: Boolean = false
