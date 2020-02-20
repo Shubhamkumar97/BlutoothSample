@@ -2,9 +2,7 @@ package com.app.distance.activity
 
 import android.Manifest
 import android.annotation.TargetApi
-import android.bluetooth.BluetoothAdapter
-import android.bluetooth.BluetoothDevice
-import android.bluetooth.BluetoothManager
+import android.bluetooth.*
 import android.content.*
 import android.content.pm.PackageManager
 import android.net.Uri
@@ -28,48 +26,37 @@ import com.app.distance.services.BluetoothService
 import com.app.distance.utils.GeneralFunctions
 import kotlinx.android.synthetic.main.activity_main.*
 import java.util.*
+import kotlin.math.max
+import kotlin.math.min
 
 class MainActivity : AppCompatActivity(), SwipeRefreshLayout.OnRefreshListener,
     DeviceAdapter.BlurryCallBack {
 
 
+    companion object {
+        var TAG = "MainActivity"
+    }
+
     //region Variables
     private val ACCESS_COARSE_LOCATION_CODE = 1
-
     private val APP_OVERLAY_SETTING_REQUEST_CODE = 20
-
     private val REQUEST_ENABLE_BLUETOOTH = 2
-
     private val REQUEST_ENABLE_BT = 123
-
     private val SCAN_MODE_ERROR = 3
 
     private var bluetoothReceiverRegistered: Boolean = false
-
+    private var isServiceBound: Boolean = false
     private val scanModeReceiverRegistered: Boolean = false
 
-    private var swipeRefreshLayout: SwipeRefreshLayout? = null
-
-
     private var mBluetoothAdapter: BluetoothAdapter? = null
-
     private var mConnectedBluetoothDevice: BluetoothDevice? = null
-
-    private var recyclerView: RecyclerView? = null
-
-    private var deviceAdapter: DeviceAdapter? = null
-
-    private var bluetoothManager: BluetoothManager? = null
-
-    private val devices = ArrayList<Device>()
-
-
-
-
-
     private var mBlueToothService: BluetoothService? = null
 
-    private var isServiceBound: Boolean = false
+    private var bluetoothManager: BluetoothManager? = null
+    private var recyclerView: RecyclerView? = null
+    private var swipeRefreshLayout: SwipeRefreshLayout? = null
+    private var deviceAdapter: DeviceAdapter? = null
+    private val devices = ArrayList<Device>()
 
     private val handler = Handler()
     private var scanTask: Runnable = object : Runnable {
@@ -78,8 +65,6 @@ class MainActivity : AppCompatActivity(), SwipeRefreshLayout.OnRefreshListener,
             scanBluetooth()
         }
     }
-    //endregion
-
 
     private var bluetoothServiceIntent: Intent? = null
     private var mServiceConnection: ServiceConnection = object : ServiceConnection {
@@ -94,42 +79,55 @@ class MainActivity : AppCompatActivity(), SwipeRefreshLayout.OnRefreshListener,
         }
 
     }
-
     private val bluetoothReceiver = object : BroadcastReceiver() {
-                override fun onReceive(context: Context, intent: Intent) {
+        override fun onReceive(context: Context, intent: Intent) {
             Log.d(TAG, "onReceive: Execute")
             val action = intent.action
 
             if (BluetoothDevice.ACTION_FOUND == action) {
                 val device =
                     intent.getParcelableExtra<BluetoothDevice>(BluetoothDevice.EXTRA_DEVICE)
+
+                if (device?.name.isNullOrEmpty()) return
+
                 val deviceName = device!!.name
                 val paired = device.bondState == BluetoothDevice.BOND_BONDED
                 val deviceAddress = device.address
                 val deviceRSSI = intent.extras!!.getShort(BluetoothDevice.EXTRA_RSSI, 0.toShort())
                 val mDevice = Device(deviceName, paired, deviceAddress, deviceRSSI, device)
 
-//                if (device.bondState == BluetoothDevice.BOND_BONDED) {
-//                    Log.i("test", "bonded")
-//
-//                }
-//
-//
-//                if (deviceAddress == "1C:CC:D6:EE:CA:87") {
-//
-//                    Log.i("test", "device found")
-//                    devices.clear()
-//
-//                }
+                var isNew = true
+                var positionToUpdate = -1
 
-                devices.remove(scannedDevice(mDevice))
-                devices.add(mDevice)
-                deviceAdapter!!.notifyDataSetChanged()
-            } else if (BluetoothAdapter.ACTION_DISCOVERY_FINISHED == action) {
-                if (devices.size == 0) {
-                    Log.d(TAG, "onReceive: No device")
+                LoopOuter@
+                for (i in 0 until devices.size) {
+                    if (devices[i].address.contentEquals(mDevice.address)) {
+                        positionToUpdate = i
+                        isNew = false
+                        break@LoopOuter
+                    }
                 }
+
+                if (isNew) {
+                    devices.add(mDevice)
+                }
+
+
+                if (positionToUpdate > -1) {
+                    devices[positionToUpdate] = mDevice
+                    deviceAdapter?.notifyItemChanged(positionToUpdate)
+                    positionToUpdate = -1
+                } else {
+                    deviceAdapter!!.notifyDataSetChanged()
+                }
+
             }
+
+//            else if (BluetoothAdapter.ACTION_DISCOVERY_FINISHED == action) {
+//                if (devices.size == 0) {
+//                    Log.d(TAG, "onReceive: No device")
+//                }
+//            }
 
 
         }
@@ -186,27 +184,7 @@ class MainActivity : AppCompatActivity(), SwipeRefreshLayout.OnRefreshListener,
 //                }
 //            }
 //        }
-
-
-        private fun scannedDevice(d: Device): Device? {
-            for (device in devices) {
-                if (d.address == device.address) {
-                    return device
-                }
-            }
-            return null
-        }
-
-        /*private boolean containsDevice(Device d) {
-            for (Device device : devices) {
-                if (d.getAddress().equals(device.getAddress())) {
-                    return true;
-                }
-            }
-            return false;
-        }*/
     }
-
     private val scanModeReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
             val scanMode = intent.getIntExtra(BluetoothAdapter.EXTRA_SCAN_MODE, SCAN_MODE_ERROR)
@@ -219,7 +197,10 @@ class MainActivity : AppCompatActivity(), SwipeRefreshLayout.OnRefreshListener,
             }
         }
     }
+    //endregion
 
+
+    //region LifeCycleMethods
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
@@ -296,35 +277,12 @@ class MainActivity : AppCompatActivity(), SwipeRefreshLayout.OnRefreshListener,
 
     }
 
-    private fun initView() {
-        swipeRefreshLayout = swipe_refresh
-        swipeRefreshLayout!!.setColorSchemeResources(R.color.colorPrimary)
-        swipeRefreshLayout!!.setOnRefreshListener(this)
-        recyclerView = recycler_view
-        deviceAdapter = DeviceAdapter(devices, this)
-        recyclerView!!.adapter = deviceAdapter
-        val layoutManager = LinearLayoutManager(this)
-        recyclerView!!.layoutManager = layoutManager
+    override fun onStop() {
+        super.onStop()
+        unboundService()
     }
+    //endregion
 
-    private fun initData() {
-        bluetoothServiceIntent = Intent(this, BluetoothService::class.java)
-        mBluetoothAdapter = BluetoothAdapter.getDefaultAdapter()
-    }
-
-    private fun scanBluetooth() {
-        bluetoothReceiverRegistered = true
-        val filter = IntentFilter()
-        filter.addAction(BluetoothDevice.ACTION_FOUND)
-        filter.addAction(BluetoothAdapter.ACTION_DISCOVERY_FINISHED)
-        filter.addAction(BluetoothDevice.ACTION_ACL_CONNECTED)
-        filter.addAction(BluetoothDevice.ACTION_BOND_STATE_CHANGED)
-        registerReceiver(bluetoothReceiver, filter)
-        if (mBluetoothAdapter!!.isDiscovering) {
-            mBluetoothAdapter!!.cancelDiscovery()
-        }
-        mBluetoothAdapter!!.startDiscovery()
-    }
 
     override fun onRefresh() {
         runOnUiThread {
@@ -341,13 +299,6 @@ class MainActivity : AppCompatActivity(), SwipeRefreshLayout.OnRefreshListener,
         }
     }
 
-    companion object {
-
-        var TAG = "MainActivity"
-
-    }
-
-
     //region Service Related Methods
     private fun startBluetoothNotificationService() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
@@ -359,7 +310,6 @@ class MainActivity : AppCompatActivity(), SwipeRefreshLayout.OnRefreshListener,
         }
 
     }
-
 
     private fun unboundService() {
         if (isServiceBound) {
@@ -376,7 +326,7 @@ class MainActivity : AppCompatActivity(), SwipeRefreshLayout.OnRefreshListener,
     }
     //endregion
 
-
+    //region Custom Methods
     @TargetApi(Build.VERSION_CODES.M)
     private fun showDialog() {
         android.app.AlertDialog.Builder(this)
@@ -398,15 +348,9 @@ class MainActivity : AppCompatActivity(), SwipeRefreshLayout.OnRefreshListener,
             .show()
     }
 
-    override fun onStop() {
-        super.onStop()
-        unboundService()
-    }
-
     override fun toggleBlurryView(shouldMakeBlurry: Boolean) {
         mBlueToothService?.toggleBlurryView(shouldMakeBlurry)
     }
-
 
     //For Pairing
     private fun pairDevice(device: BluetoothDevice) {
@@ -437,19 +381,29 @@ class MainActivity : AppCompatActivity(), SwipeRefreshLayout.OnRefreshListener,
     override fun itemClicked(deviceData: Device) {
         mConnectedBluetoothDevice = deviceData.bluetoothDevice
         pairDevice(mConnectedBluetoothDevice!!)
-        scanBluetooth()
+
+        // remove callbacks
+        handler.removeCallbacks(scanTask)
+
+        // add callback
+        Handler().postDelayed({ handler.post(scanTask) }, 3000)
+
+
+        // not working
+//        // connect gatt
+//        devices.forEach {
+//            it.bluetoothDevice.connectGatt(this, true, object : BluetoothGattCallback() {
+//                override fun onReadRemoteRssi(gatt: BluetoothGatt?, rssi: Int, status: Int) {
+//                    super.onReadRemoteRssi(gatt, rssi, status)
+//                    if (BluetoothGatt.GATT_SUCCESS == status) {
+//                        Log.i(TAG, min(max(2 * (rssi + 100), 0), 100).toString())
+//                    }
+//                }
+//            })
+//        }
     }
 
     //For UnPairing
-//    private fun unpairDevice(device: BluetoothDevice) {
-//        try {
-//            val m = device.javaClass.getMethod("rmovebondnative()", null as Class<*>?)
-//            m.invoke(device, null as Array<Any>?)
-//        } catch (e: Exception) {
-//            Log.e(TAG, e.message!!)
-//        }
-//    }
-
     private fun unpairDevice(device: BluetoothDevice) {
         try {
             val method = device.javaClass.getMethod(
@@ -461,5 +415,41 @@ class MainActivity : AppCompatActivity(), SwipeRefreshLayout.OnRefreshListener,
         }
     }
 
+    private fun scannedDevice(d: Device): Device? {
+        for (device in devices) {
+            if (d.address == device.address) {
+                return device
+            }
+        }
+        return null
+    }
+
+    private fun initView() {
+        swipeRefreshLayout = swipe_refresh
+        swipeRefreshLayout!!.setColorSchemeResources(R.color.colorPrimary)
+        swipeRefreshLayout!!.setOnRefreshListener(this)
+        recyclerView = recycler_view
+        deviceAdapter = DeviceAdapter(devices, this)
+        recyclerView!!.adapter = deviceAdapter
+        val layoutManager = LinearLayoutManager(this)
+        recyclerView!!.layoutManager = layoutManager
+    }
+
+    private fun initData() {
+        bluetoothServiceIntent = Intent(this, BluetoothService::class.java)
+        mBluetoothAdapter = BluetoothAdapter.getDefaultAdapter()
+    }
+
+    private fun scanBluetooth() {
+        bluetoothReceiverRegistered = true
+        val filter = IntentFilter()
+        filter.addAction(BluetoothDevice.ACTION_FOUND)
+        registerReceiver(bluetoothReceiver, filter)
+        if (mBluetoothAdapter!!.isDiscovering) {
+            mBluetoothAdapter!!.cancelDiscovery()
+        }
+        mBluetoothAdapter!!.startDiscovery()
+    }
+    //endregion
 
 }

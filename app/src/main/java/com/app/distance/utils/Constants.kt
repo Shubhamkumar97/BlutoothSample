@@ -6,5 +6,5 @@ package com.app.distance.utils
  */
 object Constants {
 
-    const val BLUETOOTH_MIN_STRENGTH_RANGE_TO_SEE_VIDEO = 75
+    const val BLUETOOTH_MIN_STRENGTH_RANGE_TO_SEE_VIDEO = 95
 }

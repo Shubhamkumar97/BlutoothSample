@@ -39,7 +39,6 @@ class DeviceAdapter(
             mBlurryCallBack.toggleBlurryView(device.signal2.toInt() > BLUETOOTH_MIN_STRENGTH_RANGE_TO_SEE_VIDEO)
 
         holder.itemView.setOnClickListener {
-
             mBlurryCallBack.itemClicked(mDeviceList[position])
         }
 
